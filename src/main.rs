@@ -58,13 +58,13 @@ impl Grammar {
                 )
             })
     }
-    fn first(&self, rule: &String) -> Vec<&String> {
+    fn first_from_rule(&self, rule: &String) -> Vec<&String> {
         self.rules
             .iter()
             .filter(|r| r.name == *rule)
             .map(|r| match r.production.first_symbol() {
                 Symbol::Lexem(f) => vec![f],
-                Symbol::AST(r) => self.first(&r),
+                Symbol::AST(r) => self.first_from_rule(&r),
             })
             .flatten()
             .collect()
@@ -72,7 +72,7 @@ impl Grammar {
     fn first_from_symbol<'a>(&'a self, s: &'a Symbol) -> Vec<&'a String> {
         match s {
             Symbol::Lexem(f) => vec![f],
-            Symbol::AST(r) => self.first(r),
+            Symbol::AST(r) => self.first_from_rule(r),
         }
     }
     fn parse(&self, input: &String) -> Result<AST, ()> {
@@ -99,10 +99,10 @@ impl Grammar {
 
         log::debug!("rules found: {:?}", rules);
 
-        if let Some(Rule { production, .. }) = rules
-            .iter()
-            .find(|r| self.first(&r.name).contains(&&peeked.t))
-        {
+        if let Some(Rule { production, .. }) = rules.iter().find(|r| {
+            self.first_from_symbol(r.production.first_symbol())
+                .contains(&&peeked.t)
+        }) {
             let children = self.parse_symbol_type(production, lexems)?;
             return Ok(AST {
                 t: rule.clone(),
@@ -257,22 +257,40 @@ fn main() {
         rules: vec![
             Rule {
                 name: "START".into(),
-                production: SymbolType::Symbol(Symbol::AST("PARS".into())),
+                production: SymbolType::Symbol(Symbol::AST("LIST".into())),
             },
             Rule {
-                name: "PARS".into(),
-                production: SymbolType::Multiple(Box::new(SymbolType::Group(vec![
-                    SymbolType::Symbol(Symbol::Lexem("(".into())),
-                    SymbolType::Symbol(Symbol::Lexem(")".into())),
-                ]))),
+                name: "START".into(),
+                production: SymbolType::Symbol(Symbol::AST("OBJ".into())),
+            },
+            Rule {
+                name: "LIST".into(),
+                production: SymbolType::Group(vec![
+                    SymbolType::Symbol(Symbol::Lexem("[".into())),
+                    SymbolType::Symbol(Symbol::Lexem("]".into())),
+                ]),
+            },
+            Rule {
+                name: "OBJ".into(),
+                production: SymbolType::Group(vec![
+                    SymbolType::Symbol(Symbol::Lexem("{".into())),
+                    SymbolType::Symbol(Symbol::Lexem("}".into())),
+                ]),
             },
         ],
         atoms: vec![
-            Atom::Simple { name: "(".into() },
-            Atom::Simple { name: ")".into() },
+            Atom::Simple { name: "[".into() },
+            Atom::Simple { name: "]".into() },
+            Atom::Simple { name: "{".into() },
+            Atom::Simple { name: "}".into() },
+            Atom::Matched {
+                name: "NUMBER".into(),
+                m: Regex::new(r"\d+").unwrap(),
+            },
         ],
     };
-    println!("{:?}", g.parse(&"()".into()));
+    assert!(g.parse(&"[]".into()).is_ok());
+    assert!(g.parse(&"{}".into()).is_ok());
 }
 
 #[cfg(test)]
@@ -410,5 +428,47 @@ mod tests {
         assert!(g.parse(&"()()()".into()).is_ok());
         assert!(g.parse(&"()(".into()).is_err());
         assert!(g.parse(&"()()(".into()).is_err());
+    }
+    #[test]
+    fn parse_multiple_matching_rules() {
+        let g = Grammar {
+            rules: vec![
+                Rule {
+                    name: "START".into(),
+                    production: SymbolType::Symbol(Symbol::AST("LIST".into())),
+                },
+                Rule {
+                    name: "START".into(),
+                    production: SymbolType::Symbol(Symbol::AST("OBJ".into())),
+                },
+                Rule {
+                    name: "LIST".into(),
+                    production: SymbolType::Group(vec![
+                        SymbolType::Symbol(Symbol::Lexem("[".into())),
+                        SymbolType::Symbol(Symbol::Lexem("]".into())),
+                    ]),
+                },
+                Rule {
+                    name: "OBJ".into(),
+                    production: SymbolType::Group(vec![
+                        SymbolType::Symbol(Symbol::Lexem("{".into())),
+                        SymbolType::Symbol(Symbol::Lexem("}".into())),
+                    ]),
+                },
+            ],
+            atoms: vec![
+                Atom::Simple { name: "[".into() },
+                Atom::Simple { name: "]".into() },
+                Atom::Simple { name: "{".into() },
+                Atom::Simple { name: "}".into() },
+                Atom::Matched {
+                    name: "NUMBER".into(),
+                    m: Regex::new(r"\d+").unwrap(),
+                },
+            ],
+        };
+        assert!(g.parse(&"[]".into()).is_ok());
+        assert!(g.parse(&"{}".into()).is_ok());
+        assert!(g.parse(&"[}".into()).is_err());
     }
 }
