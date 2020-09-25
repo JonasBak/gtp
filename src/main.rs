@@ -39,14 +39,14 @@ struct Grammar {
 
 #[derive(Debug)]
 enum Symbol {
-    Lexem(String),
+    Lexem { t: String, include_raw: bool },
     AST(String),
 }
 
 #[derive(Debug)]
-struct AST {
-    t: String,
-    children: Vec<AST>,
+enum AST {
+    Node { t: String, children: Vec<AST> },
+    Leaf { t: String, raw: String },
 }
 
 impl Grammar {
@@ -73,7 +73,7 @@ impl Grammar {
                     .first_symbol()
                     .iter()
                     .map(|s| match s {
-                        Symbol::Lexem(f) => vec![f],
+                        Symbol::Lexem { t, .. } => vec![t],
                         Symbol::AST(r) => self.first_from_rule(&r),
                     })
                     .flatten()
@@ -84,7 +84,7 @@ impl Grammar {
     }
     fn first_from_symbol<'a>(&'a self, s: &'a Symbol) -> Vec<&'a String> {
         match s {
-            Symbol::Lexem(f) => vec![f],
+            Symbol::Lexem { t, .. } => vec![t],
             Symbol::AST(r) => self.first_from_rule(r),
         }
     }
@@ -125,7 +125,7 @@ impl Grammar {
             log::debug!("choosing production: {:?}", production);
 
             let children = self.parse_symbol_type(production, lexems)?;
-            return Ok(AST {
+            return Ok(AST::Node {
                 t: rule.clone(),
                 children,
             });
@@ -178,10 +178,14 @@ impl Grammar {
     }
     fn parse_symbol(&self, s: &Symbol, lexems: &mut LexemIter) -> Result<Option<AST>, ()> {
         match s {
-            Symbol::Lexem(la) => {
-                if lexems.peek().map(|p| p.t == *la).unwrap_or(false) {
-                    lexems.next();
-                    Ok(None)
+            Symbol::Lexem { t, include_raw } => {
+                if lexems.peek().map(|p| p.t == *t).unwrap_or(false) {
+                    let a = lexems.next().unwrap();
+                    if *include_raw {
+                        Ok(Some(AST::Leaf { t: a.t, raw: a.raw }))
+                    } else {
+                        Ok(None)
+                    }
                 } else {
                     Err(())
                 }
@@ -284,34 +288,6 @@ impl Atom {
 
 fn main() {
     env_logger::init();
-    let g = Grammar {
-        rules: vec![
-            Rule {
-                name: "START".into(),
-                production: SymbolType::Symbol(Symbol::AST("COMP".into())),
-            },
-            Rule {
-                name: "COMP".into(),
-                production: SymbolType::Group(vec![
-                    SymbolType::Symbol(Symbol::Lexem("NUMBER".into())),
-                    SymbolType::Switch(
-                        Box::new(SymbolType::Symbol(Symbol::Lexem("<".into()))),
-                        Box::new(SymbolType::Symbol(Symbol::Lexem(">".into()))),
-                    ),
-                    SymbolType::Symbol(Symbol::Lexem("NUMBER".into())),
-                ]),
-            },
-        ],
-        atoms: vec![
-            Atom::Simple { name: "<".into() },
-            Atom::Simple { name: ">".into() },
-            Atom::Matched {
-                name: "NUMBER".into(),
-                m: Regex::new(r"\d+").unwrap(),
-            },
-        ],
-    };
-    assert!(g.parse(&"12<9".into()).is_ok());
 }
 
 #[cfg(test)]
@@ -371,9 +347,18 @@ mod tests {
                 Rule {
                     name: "PAR".into(),
                     production: SymbolType::Group(vec![
-                        SymbolType::Symbol(Symbol::Lexem("(".into())),
-                        SymbolType::Symbol(Symbol::Lexem("NUMBER".into())),
-                        SymbolType::Symbol(Symbol::Lexem(")".into())),
+                        SymbolType::Symbol(Symbol::Lexem {
+                            t: "(".into(),
+                            include_raw: false,
+                        }),
+                        SymbolType::Symbol(Symbol::Lexem {
+                            t: "NUMBER".into(),
+                            include_raw: false,
+                        }),
+                        SymbolType::Symbol(Symbol::Lexem {
+                            t: ")".into(),
+                            include_raw: false,
+                        }),
                     ]),
                 },
             ],
@@ -403,10 +388,19 @@ mod tests {
                 Rule {
                     name: "FLOAT".into(),
                     production: SymbolType::Group(vec![
-                        SymbolType::Symbol(Symbol::Lexem("NUMBER".into())),
+                        SymbolType::Symbol(Symbol::Lexem {
+                            t: "NUMBER".into(),
+                            include_raw: false,
+                        }),
                         SymbolType::Optional(Box::new(SymbolType::Group(vec![
-                            SymbolType::Symbol(Symbol::Lexem(".".into())),
-                            SymbolType::Symbol(Symbol::Lexem("NUMBER".into())),
+                            SymbolType::Symbol(Symbol::Lexem {
+                                t: ".".into(),
+                                include_raw: false,
+                            }),
+                            SymbolType::Symbol(Symbol::Lexem {
+                                t: "NUMBER".into(),
+                                include_raw: false,
+                            }),
                         ]))),
                     ]),
                 },
@@ -434,8 +428,14 @@ mod tests {
                 Rule {
                     name: "PARS".into(),
                     production: SymbolType::Multiple(Box::new(SymbolType::Group(vec![
-                        SymbolType::Symbol(Symbol::Lexem("(".into())),
-                        SymbolType::Symbol(Symbol::Lexem(")".into())),
+                        SymbolType::Symbol(Symbol::Lexem {
+                            t: "(".into(),
+                            include_raw: false,
+                        }),
+                        SymbolType::Symbol(Symbol::Lexem {
+                            t: ")".into(),
+                            include_raw: false,
+                        }),
                     ]))),
                 },
             ],
@@ -465,15 +465,27 @@ mod tests {
                 Rule {
                     name: "LIST".into(),
                     production: SymbolType::Group(vec![
-                        SymbolType::Symbol(Symbol::Lexem("[".into())),
-                        SymbolType::Symbol(Symbol::Lexem("]".into())),
+                        SymbolType::Symbol(Symbol::Lexem {
+                            t: "[".into(),
+                            include_raw: false,
+                        }),
+                        SymbolType::Symbol(Symbol::Lexem {
+                            t: "]".into(),
+                            include_raw: false,
+                        }),
                     ]),
                 },
                 Rule {
                     name: "OBJ".into(),
                     production: SymbolType::Group(vec![
-                        SymbolType::Symbol(Symbol::Lexem("{".into())),
-                        SymbolType::Symbol(Symbol::Lexem("}".into())),
+                        SymbolType::Symbol(Symbol::Lexem {
+                            t: "{".into(),
+                            include_raw: false,
+                        }),
+                        SymbolType::Symbol(Symbol::Lexem {
+                            t: "}".into(),
+                            include_raw: false,
+                        }),
                     ]),
                 },
             ],
@@ -503,12 +515,24 @@ mod tests {
                 Rule {
                     name: "COMP".into(),
                     production: SymbolType::Group(vec![
-                        SymbolType::Symbol(Symbol::Lexem("NUMBER".into())),
+                        SymbolType::Symbol(Symbol::Lexem {
+                            t: "NUMBER".into(),
+                            include_raw: false,
+                        }),
                         SymbolType::Switch(
-                            Box::new(SymbolType::Symbol(Symbol::Lexem("<".into()))),
-                            Box::new(SymbolType::Symbol(Symbol::Lexem(">".into()))),
+                            Box::new(SymbolType::Symbol(Symbol::Lexem {
+                                t: "<".into(),
+                                include_raw: false,
+                            })),
+                            Box::new(SymbolType::Symbol(Symbol::Lexem {
+                                t: ">".into(),
+                                include_raw: false,
+                            })),
                         ),
-                        SymbolType::Symbol(Symbol::Lexem("NUMBER".into())),
+                        SymbolType::Symbol(Symbol::Lexem {
+                            t: "NUMBER".into(),
+                            include_raw: false,
+                        }),
                     ]),
                 },
             ],
@@ -524,5 +548,124 @@ mod tests {
         assert!(g.parse(&"12<9".into()).is_ok());
         assert!(g.parse(&"12>9".into()).is_ok());
         assert!(g.parse(&"12".into()).is_err());
+    }
+    #[test]
+    fn parse_mini_json() {
+        let g = Grammar {
+            rules: vec![
+                Rule {
+                    name: "START".into(),
+                    production: SymbolType::Symbol(Symbol::AST("ITEM".into())),
+                },
+                Rule {
+                    name: "ITEM".into(),
+                    production: SymbolType::Symbol(Symbol::AST("OBJ".into())),
+                },
+                Rule {
+                    name: "ITEM".into(),
+                    production: SymbolType::Symbol(Symbol::AST("LIST".into())),
+                },
+                Rule {
+                    name: "ITEM".into(),
+                    production: SymbolType::Symbol(Symbol::Lexem {
+                        t: "NUMBER".into(),
+                        include_raw: false,
+                    }),
+                },
+                Rule {
+                    name: "OBJ".into(),
+                    production: SymbolType::Group(vec![
+                        SymbolType::Symbol(Symbol::Lexem {
+                            t: "{".into(),
+                            include_raw: false,
+                        }),
+                        SymbolType::Optional(Box::new(SymbolType::Group(vec![
+                            SymbolType::Symbol(Symbol::AST("KV".into())),
+                            SymbolType::Multiple(Box::new(SymbolType::Group(vec![
+                                SymbolType::Symbol(Symbol::Lexem {
+                                    t: ",".into(),
+                                    include_raw: false,
+                                }),
+                                SymbolType::Symbol(Symbol::AST("KV".into())),
+                            ]))),
+                        ]))),
+                        SymbolType::Symbol(Symbol::Lexem {
+                            t: "}".into(),
+                            include_raw: false,
+                        }),
+                    ]),
+                },
+                Rule {
+                    name: "KV".into(),
+                    production: SymbolType::Group(vec![
+                        SymbolType::Symbol(Symbol::Lexem {
+                            t: "\"".into(),
+                            include_raw: false,
+                        }),
+                        SymbolType::Symbol(Symbol::Lexem {
+                            t: "STRING".into(),
+                            include_raw: false,
+                        }),
+                        SymbolType::Symbol(Symbol::Lexem {
+                            t: "\"".into(),
+                            include_raw: false,
+                        }),
+                        SymbolType::Symbol(Symbol::Lexem {
+                            t: ":".into(),
+                            include_raw: false,
+                        }),
+                        SymbolType::Symbol(Symbol::AST("ITEM".into())),
+                    ]),
+                },
+                Rule {
+                    name: "LIST".into(),
+                    production: SymbolType::Group(vec![
+                        SymbolType::Symbol(Symbol::Lexem {
+                            t: "[".into(),
+                            include_raw: false,
+                        }),
+                        SymbolType::Optional(Box::new(SymbolType::Group(vec![
+                            SymbolType::Symbol(Symbol::AST("ITEM".into())),
+                            SymbolType::Multiple(Box::new(SymbolType::Group(vec![
+                                SymbolType::Symbol(Symbol::Lexem {
+                                    t: ",".into(),
+                                    include_raw: false,
+                                }),
+                                SymbolType::Symbol(Symbol::AST("ITEM".into())),
+                            ]))),
+                        ]))),
+                        SymbolType::Symbol(Symbol::Lexem {
+                            t: "]".into(),
+                            include_raw: false,
+                        }),
+                    ]),
+                },
+            ],
+            atoms: vec![
+                Atom::Simple { name: "{".into() },
+                Atom::Simple { name: "}".into() },
+                Atom::Simple { name: "[".into() },
+                Atom::Simple { name: "]".into() },
+                Atom::Simple { name: ",".into() },
+                Atom::Simple { name: ":".into() },
+                Atom::Simple { name: "\"".into() },
+                Atom::Matched {
+                    name: "STRING".into(),
+                    m: Regex::new(r"\p{Alphabetic}+").unwrap(),
+                },
+                Atom::Matched {
+                    name: "NUMBER".into(),
+                    m: Regex::new(r"\d+").unwrap(),
+                },
+            ],
+        };
+        assert!(g.parse(&"{}".into()).is_ok());
+        assert!(g.parse(&"[]".into()).is_ok());
+        assert!(g.parse(&r#"{"field":12}"#.into()).is_ok());
+        assert!(g.parse(&r#"{"fieldA":[1,2,3],"fieldB":{}}"#.into()).is_ok());
+        assert!(g.parse(&"[{},12,[[]]]".into()).is_ok());
+        assert!(g.parse(&"[".into()).is_err());
+        assert!(g.parse(&"[{{}}]".into()).is_err());
+        assert!(g.parse(&r#"{"field"}"#.into()).is_err());
     }
 }
