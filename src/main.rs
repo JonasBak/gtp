@@ -22,7 +22,7 @@ impl SymbolType {
 #[derive(Debug)]
 struct Rule {
     name: String,
-    production: Vec<SymbolType>,
+    production: SymbolType,
 }
 
 #[derive(Debug)]
@@ -62,12 +62,18 @@ impl Grammar {
         self.rules
             .iter()
             .filter(|r| r.name == *rule)
-            .map(|r| match r.production[0].first_symbol() {
+            .map(|r| match r.production.first_symbol() {
                 Symbol::Lexem(f) => vec![f],
                 Symbol::AST(r) => self.first(&r),
             })
             .flatten()
             .collect()
+    }
+    fn first_from_symbol<'a>(&'a self, s: &'a Symbol) -> Vec<&'a String> {
+        match s {
+            Symbol::Lexem(f) => vec![f],
+            Symbol::AST(r) => self.first(r),
+        }
     }
     fn parse(&self, input: &String) -> Result<AST, ()> {
         log::debug!("parsing input:\n{}", input);
@@ -77,7 +83,7 @@ impl Grammar {
         self.parse_rule(&"START".into(), &mut lexems)
     }
     fn parse_rule(&self, rule: &String, lexems: &mut LexemIter) -> Result<AST, ()> {
-        let peeked = lexems.peek().ok_or(())?;
+        let peeked = lexems.peek().ok_or(()).expect("todo handle empty");
         log::debug!("parsing rule: {:?}", rule);
         log::debug!("peeked: {:?}", peeked);
 
@@ -87,14 +93,17 @@ impl Grammar {
             .filter(|Rule { name, .. }| name == rule)
             .collect::<Vec<_>>();
 
+        if rules.len() == 0 {
+            panic!("no rule matching name: {}", rule);
+        }
+
+        log::debug!("rules found: {:?}", rules);
+
         if let Some(Rule { production, .. }) = rules
             .iter()
             .find(|r| self.first(&r.name).contains(&&peeked.t))
         {
-            let mut children = Vec::new();
-            for step in production.iter() {
-                children.extend(self.parse_symbol_type(step, lexems)?);
-            }
+            let children = self.parse_symbol_type(production, lexems)?;
             return Ok(AST {
                 t: rule.clone(),
                 children,
@@ -116,8 +125,22 @@ impl Grammar {
                     parsed.extend(self.parse_symbol_type(s, lexems)?);
                 }
             }
-            SymbolType::Optional(o) => todo!(),
-            SymbolType::Multiple(m) => todo!(),
+            SymbolType::Optional(o) => {
+                if let Some(p) = lexems.peek() {
+                    if self.first_from_symbol(o.first_symbol()).contains(&&p.t) {
+                        parsed.extend(self.parse_symbol_type(o, lexems)?);
+                    }
+                }
+            }
+            SymbolType::Multiple(m) => {
+                while let Some(p) = lexems.peek() {
+                    if self.first_from_symbol(m.first_symbol()).contains(&&p.t) {
+                        parsed.extend(self.parse_symbol_type(m, lexems)?);
+                    } else {
+                        break;
+                    }
+                }
+            }
         }
         Ok(parsed)
     }
@@ -136,7 +159,7 @@ impl Grammar {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Lexem {
     t: String,
     raw: String,
@@ -154,6 +177,7 @@ impl Lexem {
     }
 }
 
+#[derive(Clone)]
 struct LexemIter<'a> {
     grammar: &'a Grammar,
     input: &'a String,
@@ -233,30 +257,22 @@ fn main() {
         rules: vec![
             Rule {
                 name: "START".into(),
-                production: vec![SymbolType::Symbol(Symbol::AST("PAR".into()))],
+                production: SymbolType::Symbol(Symbol::AST("PARS".into())),
             },
             Rule {
-                name: "PAR".into(),
-                production: vec![
+                name: "PARS".into(),
+                production: SymbolType::Multiple(Box::new(SymbolType::Group(vec![
                     SymbolType::Symbol(Symbol::Lexem("(".into())),
-                    SymbolType::Symbol(Symbol::AST("YEET".into())),
                     SymbolType::Symbol(Symbol::Lexem(")".into())),
-                ],
-            },
-            Rule {
-                name: "YEET".into(),
-                production: vec![SymbolType::Symbol(Symbol::Lexem("yeet".into()))],
+                ]))),
             },
         ],
         atoms: vec![
             Atom::Simple { name: "(".into() },
             Atom::Simple { name: ")".into() },
-            Atom::Simple {
-                name: "yeet".into(),
-            },
         ],
     };
-    println!("{:?}", g.parse(&"(yeet)".into()));
+    println!("{:?}", g.parse(&"()".into()));
 }
 
 #[cfg(test)]
@@ -306,20 +322,20 @@ mod tests {
         assert!(lexem_iter.next().is_none());
     }
     #[test]
-    fn simple_parse() {
+    fn parse_simple() {
         let g = Grammar {
             rules: vec![
                 Rule {
                     name: "START".into(),
-                    production: vec![SymbolType::Symbol(Symbol::AST("PAR".into()))],
+                    production: SymbolType::Symbol(Symbol::AST("PAR".into())),
                 },
                 Rule {
                     name: "PAR".into(),
-                    production: vec![
+                    production: SymbolType::Group(vec![
                         SymbolType::Symbol(Symbol::Lexem("(".into())),
                         SymbolType::Symbol(Symbol::Lexem("NUMBER".into())),
                         SymbolType::Symbol(Symbol::Lexem(")".into())),
-                    ],
+                    ]),
                 },
             ],
             atoms: vec![
@@ -332,10 +348,67 @@ mod tests {
             ],
         };
         assert!(g.parse(&"(1424)".into()).is_ok());
-        assert!(g.parse(&"".into()).is_err());
         assert!(g.parse(&"(()".into()).is_err());
         assert!(g.parse(&"()".into()).is_err());
         assert!(g.parse(&"1424)".into()).is_err());
         assert!(g.parse(&"(1424".into()).is_err());
+    }
+    #[test]
+    fn parse_optional() {
+        let g = Grammar {
+            rules: vec![
+                Rule {
+                    name: "START".into(),
+                    production: SymbolType::Symbol(Symbol::AST("FLOAT".into())),
+                },
+                Rule {
+                    name: "FLOAT".into(),
+                    production: SymbolType::Group(vec![
+                        SymbolType::Symbol(Symbol::Lexem("NUMBER".into())),
+                        SymbolType::Optional(Box::new(SymbolType::Group(vec![
+                            SymbolType::Symbol(Symbol::Lexem(".".into())),
+                            SymbolType::Symbol(Symbol::Lexem("NUMBER".into())),
+                        ]))),
+                    ]),
+                },
+            ],
+            atoms: vec![
+                Atom::Simple { name: ".".into() },
+                Atom::Matched {
+                    name: "NUMBER".into(),
+                    m: Regex::new(r"\d+").unwrap(),
+                },
+            ],
+        };
+        assert!(g.parse(&"12.34".into()).is_ok());
+        assert!(g.parse(&"12".into()).is_ok());
+        assert!(g.parse(&"12.".into()).is_err());
+    }
+    #[test]
+    fn parse_multiple() {
+        let g = Grammar {
+            rules: vec![
+                Rule {
+                    name: "START".into(),
+                    production: SymbolType::Symbol(Symbol::AST("PARS".into())),
+                },
+                Rule {
+                    name: "PARS".into(),
+                    production: SymbolType::Multiple(Box::new(SymbolType::Group(vec![
+                        SymbolType::Symbol(Symbol::Lexem("(".into())),
+                        SymbolType::Symbol(Symbol::Lexem(")".into())),
+                    ]))),
+                },
+            ],
+            atoms: vec![
+                Atom::Simple { name: "(".into() },
+                Atom::Simple { name: ")".into() },
+            ],
+        };
+        assert!(g.parse(&"()".into()).is_ok());
+        assert!(g.parse(&"()()".into()).is_ok());
+        assert!(g.parse(&"()()()".into()).is_ok());
+        assert!(g.parse(&"()(".into()).is_err());
+        assert!(g.parse(&"()()(".into()).is_err());
     }
 }
