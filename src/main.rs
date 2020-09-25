@@ -31,10 +31,27 @@ struct Rule {
     production: SymbolType,
 }
 
+#[derive(Debug, Copy, Clone)]
+struct ParseOptions {
+    ignore_whitespace: bool,
+    ignore_newline: bool,
+}
+
+impl ParseOptions {
+    fn default() -> Self {
+        ParseOptions {
+            ignore_whitespace: false,
+            ignore_newline: false,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Grammar {
     rules: Vec<Rule>,
     atoms: Vec<Atom>,
+
+    options: ParseOptions,
 }
 
 #[derive(Debug)]
@@ -209,6 +226,7 @@ impl Lexem {
             cursor: 0,
             ok: Ok(()),
             peeked: None,
+            options: grammar.options,
         }
     }
 }
@@ -220,6 +238,7 @@ struct LexemIter<'a> {
     cursor: usize,
     ok: Result<(), ()>,
     peeked: Option<Lexem>,
+    options: ParseOptions,
 }
 
 impl LexemIter<'_> {
@@ -288,6 +307,93 @@ impl Atom {
 
 fn main() {
     env_logger::init();
+    macro_rules! L {
+        ( $t:expr ) => {
+            Symbol::Lexem {
+                t: $t,
+                include_raw: false,
+            }
+        };
+        ( $t:expr,  $i:expr ) => {
+            Symbol::Lexem {
+                t: $t,
+                include_raw: $i,
+            }
+        };
+    }
+    type S = Symbol;
+    type ST = SymbolType;
+    let g = Grammar {
+        options: ParseOptions::default(),
+        rules: vec![
+            Rule {
+                name: "START".into(),
+                production: ST::Symbol(S::AST("DOC".into())),
+            },
+            Rule {
+                name: "DOC".into(),
+                production: ST::Group(vec![
+                    ST::Symbol(S::AST("EXP".into())),
+                    ST::Symbol(L!(";".into())),
+                    ST::Multiple(Box::new(ST::Group(vec![ST::Symbol(S::AST("DOC".into()))]))),
+                ]),
+            },
+            Rule {
+                name: "EXP".into(),
+                production: ST::Group(vec![
+                    ST::Symbol(L!("ALPHA".into(), true)),
+                    ST::Symbol(L!("->".into())),
+                    ST::Symbol(S::AST("PROD".into())),
+                ]),
+            },
+            Rule {
+                name: "PROD".into(),
+                production: ST::Group(vec![
+                    ST::Symbol(Symbol::AST("PROD_TERM".into())),
+                    ST::Multiple(Box::new(ST::Group(vec![
+                        ST::Symbol(L!(" ".into())),
+                        ST::Switch(
+                            Box::new(ST::Symbol(S::AST("PROD_TERM".into()))),
+                            Box::new(ST::Symbol(S::AST("PROD_GROUP".into()))),
+                        ),
+                    ]))),
+                ]),
+            },
+            Rule {
+                name: "PROD_TERM".into(),
+                production: ST::Symbol(L!("ALPHA".into(), true)),
+            },
+            Rule {
+                name: "PROD_GROUP".into(),
+                production: ST::Group(vec![
+                    ST::Symbol(L!("(".into())),
+                    ST::Symbol(S::AST("PROD".into())),
+                    ST::Symbol(L!(")".into())),
+                ]),
+            },
+        ],
+        atoms: vec![
+            Atom::Simple { name: "(".into() },
+            Atom::Simple { name: ")".into() },
+            Atom::Simple { name: "*".into() },
+            Atom::Simple { name: "?".into() },
+            Atom::Simple { name: ";".into() },
+            Atom::Simple { name: "->".into() },
+            Atom::Simple { name: " ".into() },
+            Atom::Matched {
+                name: "NUMBER".into(),
+                m: Regex::new(r"\d+").unwrap(),
+            },
+            Atom::Matched {
+                name: "ALPHA".into(),
+                m: Regex::new(r"\p{Alphabetic}+").unwrap(),
+            },
+        ],
+    };
+    println!(
+        "{:?}",
+        g.parse(&"START->SUM;SUM->NUMBER (OPERATION SUM);".into())
+    );
 }
 
 #[cfg(test)]
@@ -296,6 +402,7 @@ mod tests {
     #[test]
     fn simple_lexem_iter() {
         let g = Grammar {
+            options: ParseOptions::default(),
             rules: vec![],
             atoms: vec![
                 Atom::Simple { name: "(".into() },
@@ -315,6 +422,7 @@ mod tests {
     #[test]
     fn combined_lexem_iter() {
         let g = Grammar {
+            options: ParseOptions::default(),
             rules: vec![],
             atoms: vec![
                 Atom::Simple { name: "(".into() },
@@ -339,6 +447,7 @@ mod tests {
     #[test]
     fn parse_simple() {
         let g = Grammar {
+            options: ParseOptions::default(),
             rules: vec![
                 Rule {
                     name: "START".into(),
@@ -380,6 +489,7 @@ mod tests {
     #[test]
     fn parse_optional() {
         let g = Grammar {
+            options: ParseOptions::default(),
             rules: vec![
                 Rule {
                     name: "START".into(),
@@ -420,6 +530,7 @@ mod tests {
     #[test]
     fn parse_multiple() {
         let g = Grammar {
+            options: ParseOptions::default(),
             rules: vec![
                 Rule {
                     name: "START".into(),
@@ -453,6 +564,7 @@ mod tests {
     #[test]
     fn parse_multiple_matching_rules() {
         let g = Grammar {
+            options: ParseOptions::default(),
             rules: vec![
                 Rule {
                     name: "START".into(),
@@ -507,6 +619,7 @@ mod tests {
     #[test]
     fn parse_switch() {
         let g = Grammar {
+            options: ParseOptions::default(),
             rules: vec![
                 Rule {
                     name: "START".into(),
@@ -552,6 +665,7 @@ mod tests {
     #[test]
     fn parse_mini_json() {
         let g = Grammar {
+            options: ParseOptions::default(),
             rules: vec![
                 Rule {
                     name: "START".into(),
