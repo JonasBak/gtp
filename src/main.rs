@@ -256,14 +256,28 @@ impl LexemIter<'_> {
         if self.cursor >= self.input.len() {
             return None;
         }
+        self.skip_ignored();
         match self.grammar.match_input(&self.input[self.cursor..]) {
             Some((lexem, i)) => {
                 self.cursor += i;
+                self.skip_ignored();
                 Some(lexem)
             }
             None => {
                 self.ok = Err(());
                 None
+            }
+        }
+    }
+    fn skip_ignored(&mut self) {
+        while self.cursor < self.input.len() {
+            let c = self.input.chars().nth(self.cursor).unwrap();
+            if c == ' ' && self.options.ignore_whitespace
+                || c == '\n' && self.options.ignore_newline
+            {
+                self.cursor += 1;
+            } else {
+                break;
             }
         }
     }
@@ -324,7 +338,10 @@ fn main() {
     type S = Symbol;
     type ST = SymbolType;
     let g = Grammar {
-        options: ParseOptions::default(),
+        options: ParseOptions {
+            ignore_newline: true,
+            ignore_whitespace: true,
+        },
         rules: vec![
             Rule {
                 name: "START".into(),
@@ -333,9 +350,21 @@ fn main() {
             Rule {
                 name: "DOC".into(),
                 production: ST::Group(vec![
-                    ST::Symbol(S::AST("EXP".into())),
+                    ST::Switch(
+                        Box::new(ST::Symbol(S::AST("EXP".into()))),
+                        Box::new(ST::Symbol(S::AST("ATOM".into()))),
+                    ),
                     ST::Symbol(L!(";".into())),
-                    ST::Multiple(Box::new(ST::Group(vec![ST::Symbol(S::AST("DOC".into()))]))),
+                    ST::Multiple(Box::new(ST::Symbol(S::AST("DOC".into())))),
+                ]),
+            },
+            Rule {
+                name: "ATOM".into(),
+                production: ST::Group(vec![
+                    ST::Symbol(L!(">".into())),
+                    ST::Symbol(L!("ALPHA".into(), true)),
+                    ST::Symbol(L!("->".into())),
+                    ST::Symbol(L!("ALPHA".into(), true)),
                 ]),
             },
             Rule {
@@ -350,13 +379,10 @@ fn main() {
                 name: "PROD".into(),
                 production: ST::Group(vec![
                     ST::Symbol(Symbol::AST("PROD_TERM".into())),
-                    ST::Multiple(Box::new(ST::Group(vec![
-                        ST::Symbol(L!(" ".into())),
-                        ST::Switch(
-                            Box::new(ST::Symbol(S::AST("PROD_TERM".into()))),
-                            Box::new(ST::Symbol(S::AST("PROD_GROUP".into()))),
-                        ),
-                    ]))),
+                    ST::Multiple(Box::new(ST::Switch(
+                        Box::new(ST::Symbol(S::AST("PROD_TERM".into()))),
+                        Box::new(ST::Symbol(S::AST("PROD_GROUP".into()))),
+                    ))),
                 ]),
             },
             Rule {
@@ -369,6 +395,10 @@ fn main() {
                     ST::Symbol(L!("(".into())),
                     ST::Symbol(S::AST("PROD".into())),
                     ST::Symbol(L!(")".into())),
+                    ST::Optional(Box::new(ST::Switch(
+                        Box::new(ST::Symbol(L!("*".into()))),
+                        Box::new(ST::Symbol(L!("?".into()))),
+                    ))),
                 ]),
             },
         ],
@@ -379,7 +409,7 @@ fn main() {
             Atom::Simple { name: "?".into() },
             Atom::Simple { name: ";".into() },
             Atom::Simple { name: "->".into() },
-            Atom::Simple { name: " ".into() },
+            Atom::Simple { name: ">".into() },
             Atom::Matched {
                 name: "NUMBER".into(),
                 m: Regex::new(r"\d+").unwrap(),
@@ -392,7 +422,21 @@ fn main() {
     };
     println!(
         "{:?}",
-        g.parse(&"START->SUM;SUM->NUMBER (OPERATION SUM);".into())
+        g.parse(
+            &r#"
+            START   -> PRODUCT;
+            PRODUCT -> SUM (opa PRODUCT)*;
+            SUM     -> NUMBER (opb NUMBER)*;
+            NUMBER  -> num;
+            NUMBER  -> minus num;
+
+            >opa -> todo;
+            >opb -> todo;
+            >num -> todo;
+            >minus -> todo;
+            "#
+            .into()
+        )
     );
 }
 
@@ -402,14 +446,17 @@ mod tests {
     #[test]
     fn simple_lexem_iter() {
         let g = Grammar {
-            options: ParseOptions::default(),
+            options: ParseOptions {
+                ignore_whitespace: true,
+                ignore_newline: false,
+            },
             rules: vec![],
             atoms: vec![
                 Atom::Simple { name: "(".into() },
                 Atom::Simple { name: ")".into() },
             ],
         };
-        let input = "(()())".into();
+        let input = "(() ())".into();
         let mut lexem_iter = Lexem::iter(&g, &input);
         assert_eq!(lexem_iter.next().unwrap().t, "(");
         assert_eq!(lexem_iter.next().unwrap().t, "(");
@@ -422,7 +469,10 @@ mod tests {
     #[test]
     fn combined_lexem_iter() {
         let g = Grammar {
-            options: ParseOptions::default(),
+            options: ParseOptions {
+                ignore_whitespace: true,
+                ignore_newline: true,
+            },
             rules: vec![],
             atoms: vec![
                 Atom::Simple { name: "(".into() },
@@ -433,7 +483,7 @@ mod tests {
                 },
             ],
         };
-        let input = "(1234)".into();
+        let input = "(\n1234 )".into();
         let mut lexem_iter = Lexem::iter(&g, &input);
         assert_eq!(lexem_iter.next().unwrap().t, "(");
 
