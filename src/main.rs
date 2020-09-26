@@ -5,17 +5,37 @@ enum SymbolType {
     Symbol(Symbol),
     Group(Vec<SymbolType>),
     Optional(Box<SymbolType>),
-    Multiple(Box<SymbolType>),
+    Repeated(Box<SymbolType>),
     Switch(Box<SymbolType>, Box<SymbolType>),
+}
+
+impl SymbolType {
+    fn nullable(&self) -> bool {
+        match self {
+            SymbolType::Symbol(_) | SymbolType::Group(_) => false,
+            SymbolType::Switch(a, b) => a.nullable() || b.nullable(),
+            SymbolType::Optional(_) | SymbolType::Repeated(_) => true,
+        }
+    }
 }
 
 impl SymbolType {
     fn first_symbol(&self) -> Vec<&Symbol> {
         match self {
             SymbolType::Symbol(i) => vec![i],
-            SymbolType::Group(g) => g[0].first_symbol(),
+            SymbolType::Group(g) => {
+                let mut f = Vec::new();
+                for s in g.iter() {
+                    let first = s.first_symbol();
+                    f.extend(first);
+                    if !s.nullable() {
+                        break;
+                    }
+                }
+                f
+            }
             SymbolType::Optional(o) => o.first_symbol(),
-            SymbolType::Multiple(m) => m.first_symbol(),
+            SymbolType::Repeated(m) => m.first_symbol(),
             SymbolType::Switch(a, b) => {
                 let mut v = a.first_symbol();
                 v.extend(b.first_symbol());
@@ -170,7 +190,7 @@ impl Grammar {
                     }
                 }
             }
-            SymbolType::Multiple(m) => {
+            SymbolType::Repeated(m) => {
                 while let Some(p) = lexems.peek() {
                     if self.production_matches_lexem(m, &p.t) {
                         parsed.extend(self.parse_symbol_type(m, lexems)?);
@@ -355,7 +375,7 @@ fn main() {
                         Box::new(ST::Symbol(S::AST("ATOM".into()))),
                     ),
                     ST::Symbol(L!(";".into())),
-                    ST::Multiple(Box::new(ST::Symbol(S::AST("DOC".into())))),
+                    ST::Repeated(Box::new(ST::Symbol(S::AST("DOC".into())))),
                 ]),
             },
             Rule {
@@ -364,7 +384,9 @@ fn main() {
                     ST::Symbol(L!(">".into())),
                     ST::Symbol(L!("ALPHA".into(), true)),
                     ST::Symbol(L!("->".into())),
+                    ST::Symbol(L!("'".into())),
                     ST::Symbol(L!("ALPHA".into(), true)),
+                    ST::Symbol(L!("'".into())),
                 ]),
             },
             Rule {
@@ -379,10 +401,13 @@ fn main() {
                 name: "PROD".into(),
                 production: ST::Group(vec![
                     ST::Symbol(Symbol::AST("PROD_TERM".into())),
-                    ST::Multiple(Box::new(ST::Switch(
-                        Box::new(ST::Symbol(S::AST("PROD_TERM".into()))),
-                        Box::new(ST::Symbol(S::AST("PROD_GROUP".into()))),
-                    ))),
+                    ST::Repeated(Box::new(ST::Group(vec![
+                        ST::Optional(Box::new(ST::Symbol(L!("|".into(), true)))),
+                        ST::Switch(
+                            Box::new(ST::Symbol(S::AST("PROD_TERM".into()))),
+                            Box::new(ST::Symbol(S::AST("PROD_GROUP".into()))),
+                        ),
+                    ]))),
                 ]),
             },
             Rule {
@@ -403,6 +428,7 @@ fn main() {
             },
         ],
         atoms: vec![
+            Atom::Simple { name: "|".into() },
             Atom::Simple { name: "(".into() },
             Atom::Simple { name: ")".into() },
             Atom::Simple { name: "*".into() },
@@ -410,6 +436,7 @@ fn main() {
             Atom::Simple { name: ";".into() },
             Atom::Simple { name: "->".into() },
             Atom::Simple { name: ">".into() },
+            Atom::Simple { name: "'".into() },
             Atom::Matched {
                 name: "NUMBER".into(),
                 m: Regex::new(r"\d+").unwrap(),
@@ -425,15 +452,15 @@ fn main() {
         g.parse(
             &r#"
             START   -> PRODUCT;
-            PRODUCT -> SUM (opa PRODUCT)*;
-            SUM     -> NUMBER (opb NUMBER)*;
+            SUM     -> PRODUCT (opa SUM)*;
+            PRODUCT -> NUMBER (opa PRODUCT)*;
             NUMBER  -> num;
             NUMBER  -> minus num;
 
-            >opa -> todo;
-            >opb -> todo;
-            >num -> todo;
-            >minus -> todo;
+            >opa    -> 'todo';
+            >opb    -> 'todo';
+            >num    -> 'todo';
+            >minus  -> 'todo';
             "#
             .into()
         )
@@ -588,7 +615,7 @@ mod tests {
                 },
                 Rule {
                     name: "PARS".into(),
-                    production: SymbolType::Multiple(Box::new(SymbolType::Group(vec![
+                    production: SymbolType::Repeated(Box::new(SymbolType::Group(vec![
                         SymbolType::Symbol(Symbol::Lexem {
                             t: "(".into(),
                             include_raw: false,
@@ -745,7 +772,7 @@ mod tests {
                         }),
                         SymbolType::Optional(Box::new(SymbolType::Group(vec![
                             SymbolType::Symbol(Symbol::AST("KV".into())),
-                            SymbolType::Multiple(Box::new(SymbolType::Group(vec![
+                            SymbolType::Repeated(Box::new(SymbolType::Group(vec![
                                 SymbolType::Symbol(Symbol::Lexem {
                                     t: ",".into(),
                                     include_raw: false,
@@ -790,7 +817,7 @@ mod tests {
                         }),
                         SymbolType::Optional(Box::new(SymbolType::Group(vec![
                             SymbolType::Symbol(Symbol::AST("ITEM".into())),
-                            SymbolType::Multiple(Box::new(SymbolType::Group(vec![
+                            SymbolType::Repeated(Box::new(SymbolType::Group(vec![
                                 SymbolType::Symbol(Symbol::Lexem {
                                     t: ",".into(),
                                     include_raw: false,
