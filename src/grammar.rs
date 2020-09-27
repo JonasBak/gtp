@@ -1,5 +1,6 @@
 use crate::parsing::*;
 use regex::Regex;
+use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
 use std::fmt;
 
 impl fmt::Display for Grammar {
@@ -58,6 +59,28 @@ impl fmt::Display for SymbolType {
             }
         }
         Ok(())
+    }
+}
+
+impl Serialize for AST {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            AST::Node { t, children } => {
+                let mut map = serializer.serialize_map(Some(2))?;
+                map.serialize_entry("type", t)?;
+                map.serialize_entry("children", children)?;
+                map.end()
+            }
+            AST::Leaf { t, raw } => {
+                let mut map = serializer.serialize_map(Some(2))?;
+                map.serialize_entry("type", t)?;
+                map.serialize_entry("raw", raw)?;
+                map.end()
+            }
+        }
     }
 }
 

@@ -150,6 +150,7 @@ impl Grammar {
         if lexems.next().is_some() {
             return Err(());
         }
+        lexems.ok?;
         Ok(ast)
     }
     fn parse_rule(&self, rule: &String, lexems: &mut LexemIter) -> Result<AST, ()> {

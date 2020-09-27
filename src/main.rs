@@ -1,34 +1,39 @@
 mod grammar;
 mod parsing;
 
+use clap::{App, Arg};
 use grammar::*;
+use std::fs;
 
 fn main() {
     env_logger::init();
     let g = get_parsing_grammar();
-    let ast = g
-        .parse(
-            &r#"
-            START     -> SUM;
-            SUM       -> PRODUCT (OPA PRODUCT)*;
-            PRODUCT   -> NUMBER (OPB NUMBER)*;
-            NUMBER    -> num;
-            NUMBER    -> minus num;
-
-            OPA       -> pluss | minus;
-            OPB       -> multiply | divide;
-
-            >pluss    -> '\+';
-            >minus    -> '-';
-            >multiply -> 'x';
-            >divide   -> '/';
-            >num      -> '\d+';
-            "#
-            .into(),
+    let matches = App::new("generic text parser")
+        .version("1.0")
+        .arg(
+            Arg::new("grammar")
+                .about("file containing grammar")
+                .required(true),
         )
-        .unwrap();
-    let gp = parse_ast_grammar(ast);
-    println!("Grammar:\n{}\n\n{:?}", gp, gp);
-    println!("{:#?}", gp.parse(&"1+2x3".into()));
-    println!("{:#?}", gp.parse(&"1x2+3".into()));
+        .arg(Arg::new("input").about("text to parse"))
+        .get_matches();
+
+    let raw_grammar = fs::read_to_string(matches.value_of("grammar").unwrap())
+        .expect("could not read grammar file");
+    let ast = g.parse(&raw_grammar).expect("could not parse grammar");
+    let grammar = parse_ast_grammar(ast);
+    match matches.value_of("input") {
+        Some(input) => {
+            println!(
+                "{}",
+                serde_json::to_string(
+                    &grammar.parse(&input.into()).expect("Could not parse input")
+                )
+                .unwrap()
+            );
+        }
+        None => {
+            println!("Grammar parsed:\n{}", grammar);
+        }
+    }
 }
