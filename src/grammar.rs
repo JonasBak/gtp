@@ -1,6 +1,6 @@
 use crate::parsing::*;
 use regex::Regex;
-use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
+use serde::ser::{Serialize, SerializeMap, Serializer};
 use std::fmt;
 
 impl fmt::Display for Grammar {

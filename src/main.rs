@@ -3,7 +3,37 @@ mod parsing;
 
 use clap::{App, Arg};
 use grammar::*;
+use parsing::*;
 use std::fs;
+
+fn get_line_from_pos(mut pos: usize, input: &String) -> (usize, usize, &str) {
+    let mut lines = input.split("\n");
+    let mut line_nr = 0;
+    let mut prev_line = lines.next().unwrap();
+    for line in lines {
+        if line.len() > pos {
+            break;
+        } else {
+            pos -= line.len() + 1;
+            prev_line = line;
+            line_nr += 1;
+        }
+    }
+    return (pos, line_nr, prev_line);
+}
+
+fn print_error(err: ParseError, input: &String) {
+    match err {
+        ParseError::Lexem(pos, msg) | ParseError::Input(pos, msg) => {
+            let (pos, line_nr, line) = get_line_from_pos(pos, input);
+            eprintln!("{:>3}. | {}", line_nr + 1, line);
+            eprintln!("     | {}^ {}", vec![" "; pos].join(""), msg);
+        }
+        ParseError::NoMatch(msg) => {
+            eprintln!("{}", msg);
+        }
+    }
+}
 
 fn main() {
     env_logger::init();
@@ -24,13 +54,15 @@ fn main() {
     let grammar = parse_ast_grammar(ast);
     match matches.value_of("input") {
         Some(input) => {
-            println!(
-                "{}",
-                serde_json::to_string(
-                    &grammar.parse(&input.into()).expect("Could not parse input")
-                )
-                .unwrap()
-            );
+            let input = input.into();
+            let ast = match grammar.parse(&input) {
+                Ok(ast) => ast,
+                Err(err) => {
+                    print_error(err, &input);
+                    std::process::exit(1);
+                }
+            };
+            println!("{}", serde_json::to_string(&ast).unwrap());
         }
         None => {
             println!("Grammar parsed:\n{}", grammar);
