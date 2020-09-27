@@ -9,9 +9,9 @@ fn main() {
     let ast = g
         .parse(
             &r#"
-            START     -> PRODUCT;
-            SUM       -> PRODUCT (OPA SUM)*;
-            PRODUCT   -> NUMBER (OPB PRODUCT)*;
+            START     -> SUM;
+            SUM       -> PRODUCT (OPA PRODUCT)*;
+            PRODUCT   -> NUMBER (OPB NUMBER)*;
             NUMBER    -> num;
             NUMBER    -> minus num;
 
@@ -27,8 +27,8 @@ fn main() {
             .into(),
         )
         .unwrap();
-    println!("AST:\n{:?}\n", ast);
     let gp = parse_ast_grammar(ast);
     println!("Grammar:\n{}\n\n{:?}", gp, gp);
-    println!("{:?}", gp.parse(&"2*3".into()));
+    println!("{:#?}", gp.parse(&"1+2x3".into()));
+    println!("{:#?}", gp.parse(&"1x2+3".into()));
 }

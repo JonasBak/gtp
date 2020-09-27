@@ -148,7 +148,7 @@ impl Grammar {
         let ast = self.parse_rule(&"START".into(), &mut lexems)?;
 
         if lexems.next().is_some() {
-            panic!();
+            return Err(());
         }
         Ok(ast)
     }

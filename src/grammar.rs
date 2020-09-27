@@ -1,6 +1,5 @@
 use crate::parsing::*;
 use regex::Regex;
-use std::collections::HashMap;
 use std::fmt;
 
 impl fmt::Display for Grammar {
@@ -309,8 +308,8 @@ mod tests {
             .parse(
                 &r#"
             START     -> PRODUCT;
-            SUM       -> PRODUCT (OPA SUM)*;
-            PRODUCT   -> NUMBER (OPB PRODUCT)*;
+            SUM       -> PRODUCT (OPA PRODUCT)*;
+            PRODUCT   -> NUMBER (OPB NUMBER)*;
             NUMBER    -> num;
             NUMBER    -> minus num;
 
@@ -333,9 +332,9 @@ mod tests {
         let ast = g
             .parse(
                 &r#"
-            START     -> PRODUCT;
-            SUM       -> PRODUCT (OPA SUM)*;
-            PRODUCT   -> NUMBER (OPB PRODUCT)*;
+            START     -> SUM;
+            SUM       -> PRODUCT (OPA PRODUCT)*;
+            PRODUCT   -> NUMBER (OPB NUMBER)*;
             NUMBER    -> num;
             NUMBER    -> minus num;
 
@@ -352,7 +351,8 @@ mod tests {
             )
             .unwrap();
         let gp = parse_ast_grammar(ast);
-
-        assert!(gp.parse(&"1+2*3".into()).is_ok());
+        println!("Grammar:\n{}\n\n{:?}", gp, gp);
+        println!("{:#?}", gp.parse(&"1+2x3".into()));
+        println!("{:#?}", gp.parse(&"1x2+3".into()));
     }
 }
