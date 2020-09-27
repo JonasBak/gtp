@@ -86,6 +86,15 @@ pub enum AST {
     Leaf { t: String, raw: String },
 }
 
+impl AST {
+    pub fn get_t(&self) -> &String {
+        match self {
+            AST::Node { t, .. } => t,
+            AST::Leaf { t, .. } => t,
+        }
+    }
+}
+
 impl Grammar {
     fn match_input(&self, input: &str) -> Option<(Lexem, usize)> {
         self.atoms
@@ -136,7 +145,12 @@ impl Grammar {
 
         let mut lexems = Lexem::iter(self, input);
 
-        self.parse_rule(&"START".into(), &mut lexems)
+        let ast = self.parse_rule(&"START".into(), &mut lexems)?;
+
+        if lexems.next().is_some() {
+            panic!();
+        }
+        Ok(ast)
     }
     fn parse_rule(&self, rule: &String, lexems: &mut LexemIter) -> Result<AST, ()> {
         let peeked = lexems.peek().ok_or(()).expect("todo handle empty");
