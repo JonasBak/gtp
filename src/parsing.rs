@@ -1,5 +1,15 @@
 use regex::Regex;
 
+#[derive(Debug, Clone)]
+pub enum ParseError {
+    Lexem(usize, String),
+    Unexpected(Option<Lexem>, String),
+    NoMatch(String),
+    Input(usize, String),
+}
+
+pub type ParseResult<T> = Result<T, ParseError>;
+
 #[derive(Debug)]
 pub enum SymbolType {
     Symbol(Symbol),
@@ -140,21 +150,24 @@ impl Grammar {
             .map(|s| self.first_from_symbol(s).contains(&t))
             .fold(false, |a, b| a || b)
     }
-    pub fn parse(&self, input: &String) -> Result<AST, ()> {
+    pub fn parse(&self, input: &String) -> ParseResult<AST> {
         log::debug!("parsing input:\n{}", input);
 
         let mut lexems = Lexem::iter(self, input);
 
         let ast = self.parse_rule(&"START".into(), &mut lexems)?;
 
-        if lexems.next().is_some() {
-            return Err(());
+        if let Some(l) = lexems.next() {
+            return Err(ParseError::Unexpected(Some(l), "expected EOF".into()));
         }
         lexems.ok?;
         Ok(ast)
     }
-    fn parse_rule(&self, rule: &String, lexems: &mut LexemIter) -> Result<AST, ()> {
-        let peeked = lexems.peek().ok_or(()).expect("todo handle empty");
+    fn parse_rule(&self, rule: &String, lexems: &mut LexemIter) -> ParseResult<AST> {
+        let cursor = lexems.cursor;
+        let peeked = lexems
+            .peek()
+            .ok_or(ParseError::Unexpected(None, "unexpected EOF".into()))?;
         log::debug!("parsing rule: {:?}", rule);
         log::debug!("peeked: {:?}", peeked);
 
@@ -165,7 +178,7 @@ impl Grammar {
             .collect::<Vec<_>>();
 
         if rules.len() == 0 {
-            panic!("no rule matching name: {}", rule);
+            return Err(ParseError::NoMatch(format!("no rule named {}", rule)));
         }
 
         log::debug!("rules found: {:?}", rules);
@@ -183,9 +196,12 @@ impl Grammar {
             });
         }
 
-        return Err(());
+        return Err(ParseError::Input(
+            cursor,
+            format!("can't parse {} with rule {}", peeked.t, rule),
+        ));
     }
-    fn parse_symbol_type(&self, s: &SymbolType, lexems: &mut LexemIter) -> Result<Vec<AST>, ()> {
+    fn parse_symbol_type(&self, s: &SymbolType, lexems: &mut LexemIter) -> ParseResult<Vec<AST>> {
         let mut parsed = Vec::new();
         match s {
             SymbolType::Symbol(s) => {
@@ -215,20 +231,19 @@ impl Grammar {
                 }
             }
             SymbolType::Switch(a, b) => {
-                if let Some(p) = lexems.peek() {
-                    if self.production_matches_lexem(a, &p.t) {
-                        parsed.extend(self.parse_symbol_type(a, lexems)?);
-                    } else {
-                        parsed.extend(self.parse_symbol_type(b, lexems)?);
-                    }
+                let p = lexems
+                    .peek()
+                    .ok_or(ParseError::Unexpected(None, "unexpected EOF".into()))?;
+                if self.production_matches_lexem(a, &p.t) {
+                    parsed.extend(self.parse_symbol_type(a, lexems)?);
                 } else {
-                    return Err(());
+                    parsed.extend(self.parse_symbol_type(b, lexems)?);
                 }
             }
         }
         Ok(parsed)
     }
-    fn parse_symbol(&self, s: &Symbol, lexems: &mut LexemIter) -> Result<Option<AST>, ()> {
+    fn parse_symbol(&self, s: &Symbol, lexems: &mut LexemIter) -> ParseResult<Option<AST>> {
         match s {
             Symbol::Lexem { t, include_raw } => {
                 if lexems.peek().map(|p| p.t == *t).unwrap_or(false) {
@@ -239,7 +254,10 @@ impl Grammar {
                         Ok(None)
                     }
                 } else {
-                    Err(())
+                    Err(ParseError::Unexpected(
+                        lexems.peek().cloned(),
+                        format!("expected {}", t),
+                    ))
                 }
             }
             Symbol::AST(rule) => Ok(Some(self.parse_rule(rule, lexems)?)),
@@ -271,7 +289,7 @@ struct LexemIter<'a> {
     grammar: &'a Grammar,
     input: &'a String,
     cursor: usize,
-    ok: Result<(), ()>,
+    ok: ParseResult<()>,
     peeked: Option<Lexem>,
     options: ParseOptions,
 }
@@ -299,7 +317,10 @@ impl LexemIter<'_> {
                 Some(lexem)
             }
             None => {
-                self.ok = Err(());
+                self.ok = Err(ParseError::Lexem(
+                    self.cursor,
+                    "could not find matching atom".into(),
+                ));
                 None
             }
         }
