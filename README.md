@@ -5,21 +5,36 @@
 ## Example
 ```bash
 $ > grammar << EOF
-START     -> SUM;
-SUM       -> PRODUCT (OPA PRODUCT)*;
-PRODUCT   -> NUMBER (OPB NUMBER)*;
-NUMBER    -> num;
-NUMBER    -> minus num;
+START     -> ( SUM )
+SUM       -> ( PRODUCT ( OPA PRODUCT )* )
+PRODUCT   -> ( NUMBER ( OPB NUMBER )* )
+NUMBER    -> ( num )
+NUMBER    -> ( minus num )
+OPA       -> ( ( pluss ) | ( minus ) )
+OPB       -> ( ( multiply ) | ( divide ) )
 
-OPA       -> pluss | minus;
-OPB       -> multiply | divide;
-
->pluss    -> '\+';
->minus    -> '-';
->multiply -> 'x';
->divide   -> '/';
->num      -> '\d+';
+>pluss    -> '\+'
+>minus    -> '-'
+>multiply -> 'x'
+>divide   -> '/'
+>num      -> '\d+'
 EOF
+
+$ cargo run -- grammar
+START -> ( SUM )
+SUM -> ( PRODUCT ( OPA PRODUCT )* )
+PRODUCT -> ( NUMBER ( OPB NUMBER )* )
+NUMBER -> ( num )
+NUMBER -> ( minus num )
+OPA -> ( ( pluss ) | ( minus ) )
+OPB -> ( ( multiply ) | ( divide ) )
+
+>pluss -> '\+'
+>minus -> '-'
+>multiply -> 'x'
+>divide -> '/'
+>num -> '\d+'
+
 $ cargo run -- grammar "1+2x1+3" -o yml --bubble
 ---
 type: SUM
@@ -40,4 +55,5 @@ children:
     raw: +
   - type: num
     raw: "3"
+
 ```
