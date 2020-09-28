@@ -270,6 +270,10 @@ impl Grammar {
             Symbol::AST(rule) => Ok(Some(self.parse_rule(rule, lexems)?)),
         }
     }
+    pub fn with_options(mut self, options: ParseOptions) -> Grammar {
+        self.options = options;
+        self
+    }
 }
 
 #[derive(Debug, Clone)]
