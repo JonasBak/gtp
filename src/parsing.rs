@@ -64,6 +64,7 @@ pub struct Rule {
 pub struct ParseOptions {
     pub ignore_whitespace: bool,
     pub ignore_newline: bool,
+    pub bubble_intermediate: bool,
 }
 
 impl ParseOptions {
@@ -71,6 +72,7 @@ impl ParseOptions {
         ParseOptions {
             ignore_whitespace: false,
             ignore_newline: false,
+            bubble_intermediate: false,
         }
     }
 }
@@ -189,10 +191,14 @@ impl Grammar {
             log::debug!("choosing production: {:?}", production);
 
             let children = self.parse_symbol_type(production, lexems)?;
-            return Ok(AST::Node {
-                t: rule.clone(),
-                children,
-            });
+            if self.options.bubble_intermediate && children.len() == 1 {
+                return Ok(children.into_iter().next().unwrap());
+            } else {
+                return Ok(AST::Node {
+                    t: rule.clone(),
+                    children,
+                });
+            }
         }
 
         return Err(ParseError::Input(
@@ -395,6 +401,7 @@ mod tests {
             options: ParseOptions {
                 ignore_whitespace: true,
                 ignore_newline: false,
+                bubble_intermediate: false,
             },
             rules: vec![],
             atoms: vec![
@@ -418,6 +425,7 @@ mod tests {
             options: ParseOptions {
                 ignore_whitespace: true,
                 ignore_newline: true,
+                bubble_intermediate: false,
             },
             rules: vec![],
             atoms: vec![

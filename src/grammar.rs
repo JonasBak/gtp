@@ -105,6 +105,7 @@ pub fn get_parsing_grammar() -> Grammar {
         options: ParseOptions {
             ignore_newline: true,
             ignore_whitespace: true,
+            bubble_intermediate: false,
         },
         rules: vec![
             Rule {

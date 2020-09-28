@@ -57,6 +57,7 @@ struct Opts {
     #[clap(short, long, default_value = "json")]
     output: Format,
 
+    // input types
     /// Input to parse
     input: Option<String>,
     /// Read input text from file instead of arg
@@ -66,6 +67,7 @@ struct Opts {
     #[clap(long)]
     stdin: bool,
 
+    // parse options:
     /// Set all ignore options to true
     #[clap(long)]
     ignore_all: bool,
@@ -75,6 +77,9 @@ struct Opts {
     /// Skip whitespaces in input
     #[clap(long)]
     ignore_whitespace: bool,
+    /// Remove intermediate nodes in the ast with only one child, making the child "bubble up"
+    #[clap(long)]
+    bubble: bool,
 }
 
 enum Format {
@@ -116,6 +121,7 @@ fn main() {
         let all = opts.ignore_all;
         o.ignore_newline = opts.ignore_newline || all;
         o.ignore_whitespace = opts.ignore_whitespace || all;
+        o.bubble_intermediate = opts.bubble;
         o
     };
 
