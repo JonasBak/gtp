@@ -6,7 +6,7 @@ use std::fmt;
 impl fmt::Display for Grammar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for rule in self.rules.iter() {
-            write!(f, "{} -> {}", rule.name, rule.production)?;
+            write!(f, "{:<15} -> {}", rule.name, rule.production)?;
 
             write!(f, "\n")?;
         }
@@ -14,10 +14,10 @@ impl fmt::Display for Grammar {
         for atom in self.atoms.iter() {
             match atom {
                 Atom::Simple { name } => {
-                    write!(f, ">{} -> '{}'", name, name)?;
+                    write!(f, ">{:<14} -> '{}'", name, name)?;
                 }
                 Atom::Matched { name, m } => {
-                    write!(f, ">{} -> '{:?}'", name, m)?;
+                    write!(f, ">{:<14} -> '{:?}'", name, m)?;
                 }
             }
 
@@ -326,9 +326,9 @@ fn parse_production(ast: AST) -> SymbolType {
 mod tests {
     use super::*;
 
-    const RAW_GRAMMAR: &str = &r#"
+    const RAW_GRAMMAR_SUM: &str = &r#"
             START -> ( SUM )
-            SUM -> ( PRODUCT ( OPA SUM )* )
+            SUM -> ( PRODUCT ( OPA PRODUCT )* )
             PRODUCT -> ( NUMBER ( OPB NUMBER )* )
             NUMBER -> ( num )
             NUMBER -> ( minus num )
@@ -341,18 +341,47 @@ mod tests {
             >divide -> '/'
             >num -> '\d+'
             "#;
+    const RAW_GRAMMAR_FILES: &str = &r#"
+            START -> ( FILE )*
+            FILE -> (alpha (dot alpha)?)
+
+            >alpha -> '\w+'
+            >dot -> '\.'
+            "#;
     #[test]
     fn parse_simple_grammar() {
         let g = get_parsing_grammar();
-        assert!(g.parse(&RAW_GRAMMAR.into()).is_ok());
+        assert!(g.parse(&RAW_GRAMMAR_SUM.into()).is_ok());
     }
     #[test]
     fn parse_ast() {
         let g = get_parsing_grammar();
-        let ast = g.parse(&RAW_GRAMMAR.into()).unwrap();
+        let ast = g.parse(&RAW_GRAMMAR_SUM.into()).unwrap();
         let gp = parse_ast_grammar(ast);
         assert!(gp.parse(&"1".into()).is_ok());
         assert!(gp.parse(&"1+2x3".into()).is_ok());
         assert!(gp.parse(&"1x2+3x4".into()).is_ok());
+    }
+    #[test]
+    fn parse_with_parsed_grammar() {
+        let g = get_parsing_grammar();
+        let ast = g.parse(&RAW_GRAMMAR_FILES.into()).unwrap();
+        let gp = parse_ast_grammar(ast).with_options(ParseOptions {
+            ignore_newline: true,
+            ignore_whitespace: true,
+            bubble_intermediate: true,
+        });
+        assert_eq!(
+            serde_json::to_string(&gp.parse(&"fileA".into()).unwrap()).unwrap(),
+            r#"{"type":"alpha","raw":"fileA"}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&gp.parse(&"fileA.md".into()).unwrap()).unwrap(),
+            r#"{"type":"FILE","children":[{"type":"alpha","raw":"fileA"},{"type":"dot","raw":"."},{"type":"alpha","raw":"md"}]}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&gp.parse(&"fileA fileB".into()).unwrap()).unwrap(),
+            r#"{"type":"START","children":[{"type":"alpha","raw":"fileA"},{"type":"alpha","raw":"fileB"}]}"#
+        );
     }
 }
