@@ -20,6 +20,24 @@ OPB       -> multiply | divide;
 >divide   -> '/';
 >num      -> '\d+';
 EOF
-$ cargo run -- grammar "4+3x5"
-{"type":"START","children":[{"type":"SUM","children":[{"type":"PRODUCT","children":[{"type":"NUMBER","children":[{"type":"num","raw":"4"}]}]},{"type":"OPA","children":[{"type":"pluss","raw":"+"}]},{"type":"PRODUCT","children":[{"type":"NUMBER","children":[{"type":"num","raw":"3"}]},{"type":"OPB","children":[{"type":"multiply","raw":"x"}]},{"type":"NUMBER","children":[{"type":"num","raw":"5"}]}]}]}]}
+$ cargo run -- grammar "1+2x1+3" -o yml --bubble
+---
+type: SUM
+children:
+  - type: num
+    raw: "1"
+  - type: pluss
+    raw: +
+  - type: PRODUCT
+    children:
+      - type: num
+        raw: "2"
+      - type: multiply
+        raw: x
+      - type: num
+        raw: "1"
+  - type: pluss
+    raw: +
+  - type: num
+    raw: "3"
 ```
