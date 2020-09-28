@@ -6,7 +6,7 @@ use std::fmt;
 impl fmt::Display for Grammar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for rule in self.rules.iter() {
-            write!(f, "{} -> {};", rule.name, rule.production)?;
+            write!(f, "{} -> {}", rule.name, rule.production)?;
 
             write!(f, "\n")?;
         }
@@ -119,14 +119,10 @@ pub fn get_parsing_grammar() -> Grammar {
                         Box::new(ST::Symbol(S::AST("EXP".into()))),
                         Box::new(ST::Symbol(S::AST("ATOM".into()))),
                     ),
-                    ST::Symbol(L!(";".into())),
-                    ST::Repeated(Box::new(ST::Group(vec![
-                        ST::Switch(
-                            Box::new(ST::Symbol(S::AST("EXP".into()))),
-                            Box::new(ST::Symbol(S::AST("ATOM".into()))),
-                        ),
-                        ST::Symbol(L!(";".into())),
-                    ]))),
+                    ST::Repeated(Box::new(ST::Switch(
+                        Box::new(ST::Symbol(S::AST("EXP".into()))),
+                        Box::new(ST::Symbol(S::AST("ATOM".into()))),
+                    ))),
                 ]),
             },
             Rule {
@@ -148,19 +144,26 @@ pub fn get_parsing_grammar() -> Grammar {
                 production: ST::Group(vec![
                     ST::Symbol(L!("ALPHA".into(), true)),
                     ST::Symbol(L!("->".into())),
-                    ST::Symbol(S::AST("PROD".into())),
+                    ST::Symbol(S::AST("PROD_GROUP".into())),
                 ]),
             },
             Rule {
                 name: "PROD".into(),
                 production: ST::Group(vec![
                     ST::Symbol(Symbol::AST("PROD_TERM".into())),
+                    ST::Repeated(Box::new(ST::Switch(
+                        Box::new(ST::Symbol(S::AST("PROD_TERM".into()))),
+                        Box::new(ST::Symbol(S::AST("PROD_GROUP".into()))),
+                    ))),
+                ]),
+            },
+            Rule {
+                name: "PROD".into(),
+                production: ST::Group(vec![
+                    ST::Symbol(Symbol::AST("PROD_GROUP".into())),
                     ST::Repeated(Box::new(ST::Group(vec![
-                        ST::Optional(Box::new(ST::Symbol(L!("|".into(), true)))),
-                        ST::Switch(
-                            Box::new(ST::Symbol(S::AST("PROD_TERM".into()))),
-                            Box::new(ST::Symbol(S::AST("PROD_GROUP".into()))),
-                        ),
+                        ST::Symbol(L!("|".into(), true)),
+                        ST::Symbol(S::AST("PROD_GROUP".into())),
                     ]))),
                 ]),
             },
@@ -187,7 +190,6 @@ pub fn get_parsing_grammar() -> Grammar {
             Atom::Simple { name: ")".into() },
             Atom::Simple { name: "*".into() },
             Atom::Simple { name: "?".into() },
-            Atom::Simple { name: ";".into() },
             Atom::Simple { name: "->".into() },
             Atom::Simple { name: ">".into() },
             Atom::Simple { name: "'".into() },
@@ -274,13 +276,11 @@ fn parse_production(ast: AST) -> SymbolType {
                 let mut children = vec![parse_production(c.next().unwrap())];
                 while let Some(p) = c.next() {
                     if p.get_t() == "|" {
-                        let mut rhs = Vec::new();
-                        while c.peek().map(|p| p.get_t() != "|").unwrap_or(false) {
-                            rhs.push(parse_production(c.next().unwrap()));
-                        }
+                        assert!(children.len() == 1);
+                        let rhs = parse_production(c.next().unwrap());
                         children = vec![SymbolType::Switch(
-                            Box::new(SymbolType::Group(children)),
-                            Box::new(SymbolType::Group(rhs)),
+                            Box::new(children.into_iter().next().unwrap()),
+                            Box::new(rhs),
                         )];
                     } else {
                         children.push(parse_production(p));
@@ -325,58 +325,34 @@ fn parse_production(ast: AST) -> SymbolType {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const RAW_GRAMMAR: &str = &r#"
+            START -> ( SUM )
+            SUM -> ( PRODUCT ( OPA SUM )* )
+            PRODUCT -> ( NUMBER ( OPB NUMBER )* )
+            NUMBER -> ( num )
+            NUMBER -> ( minus num )
+            OPA -> ( ( pluss ) | ( minus ) )
+            OPB -> ( ( multiply ) | ( divide ) )
+
+            >pluss -> '\+'
+            >minus -> '-'
+            >multiply -> 'x'
+            >divide -> '/'
+            >num -> '\d+'
+            "#;
     #[test]
     fn parse_simple_grammar() {
         let g = get_parsing_grammar();
-        assert!(g
-            .parse(
-                &r#"
-            START     -> PRODUCT;
-            SUM       -> PRODUCT (OPA PRODUCT)*;
-            PRODUCT   -> NUMBER (OPB NUMBER)*;
-            NUMBER    -> num;
-            NUMBER    -> minus num;
-
-            OPA       -> pluss | minus;
-            OPB       -> multiply | divide;
-
-            >pluss    -> '\+';
-            >minus    -> '-';
-            >multiply -> 'x';
-            >divide   -> '/';
-            >num      -> '\d+';
-            "#
-                .into()
-            )
-            .is_ok());
+        assert!(g.parse(&RAW_GRAMMAR.into()).is_ok());
     }
     #[test]
     fn parse_ast() {
         let g = get_parsing_grammar();
-        let ast = g
-            .parse(
-                &r#"
-            START     -> SUM;
-            SUM       -> PRODUCT (OPA PRODUCT)*;
-            PRODUCT   -> NUMBER (OPB NUMBER)*;
-            NUMBER    -> num;
-            NUMBER    -> minus num;
-
-            OPA       -> pluss | minus;
-            OPB       -> multiply | divide;
-
-            >pluss    -> '\+';
-            >minus    -> '-';
-            >multiply -> 'x';
-            >divide   -> '/';
-            >num      -> '\d+';
-            "#
-                .into(),
-            )
-            .unwrap();
+        let ast = g.parse(&RAW_GRAMMAR.into()).unwrap();
         let gp = parse_ast_grammar(ast);
-        println!("Grammar:\n{}\n\n{:?}", gp, gp);
-        println!("{:#?}", gp.parse(&"1+2x3".into()));
-        println!("{:#?}", gp.parse(&"1x2+3".into()));
+        assert!(gp.parse(&"1".into()).is_ok());
+        assert!(gp.parse(&"1+2x3".into()).is_ok());
+        assert!(gp.parse(&"1x2+3x4".into()).is_ok());
     }
 }

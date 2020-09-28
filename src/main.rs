@@ -151,6 +151,6 @@ fn main() {
         };
         print_output(&ast, &opts.output);
     } else {
-        println!("Grammar parsed:\n{}", grammar);
+        println!("{}", grammar);
     }
 }

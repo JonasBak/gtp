@@ -26,9 +26,6 @@ impl SymbolType {
             SymbolType::Optional(_) | SymbolType::Repeated(_) => true,
         }
     }
-}
-
-impl SymbolType {
     fn first_symbol(&self) -> Vec<&Symbol> {
         match self {
             SymbolType::Symbol(i) => vec![i],
@@ -131,7 +128,8 @@ impl Grammar {
                     .iter()
                     .map(|s| match s {
                         Symbol::Lexem { t, .. } => vec![t],
-                        Symbol::AST(r) => self.first_from_rule(&r),
+                        Symbol::AST(r) if r != rule => self.first_from_rule(&r),
+                        _ => vec![],
                     })
                     .flatten()
                     .collect::<Vec<_>>()
