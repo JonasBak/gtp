@@ -24,14 +24,14 @@ OP     -> (right)
 fn main() {
     let mut args = env::args();
     args.next();
-    let file = match args.next() {
-        Some(file) => file,
+    let input = match args.next() {
+        Some(file) => {
+            std::fs::read_to_string(file).expect("could not read file")
+        }
         None => {
-            println!("usage: brainfuck <file>");
-            return;
+            "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.".into()
         }
     };
-    let input = std::fs::read_to_string(file).expect("could not read file");
 
     let g = get_parsing_grammar();
     let ast = g.parse(&GRAMMAR.into()).unwrap();
@@ -45,14 +45,14 @@ fn main() {
 }
 
 struct Interpreter {
-    tape: Vec<u32>,
+    tape: Vec<u8>,
     ptr: usize,
 }
 
 impl Interpreter {
     fn run(width: usize, ast: &AST) {
         Interpreter {
-            tape: vec![0_u32; width],
+            tape: vec![0; width],
             ptr: 0,
         }
         .interpret(&ast);
@@ -82,7 +82,7 @@ impl Interpreter {
             AST::Leaf { t, .. } => match t.as_str() {
                 "pluss" => self.tape[self.ptr] += 1,
                 "minus" => self.tape[self.ptr] -= 1,
-                "dot" => print!("{} ", self.tape[self.ptr]),
+                "dot" => print!("{}", self.tape[self.ptr] as char),
                 "comma" => todo!(),
                 "left" => self.ptr -= 1,
                 "right" => self.ptr += 1,
