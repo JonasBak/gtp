@@ -56,4 +56,8 @@ children:
   - type: num
     raw: "3"
 
+$ echo '++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.' > hello_world
+$ cargo run --example brainfuck hello_world
+Hello World!
+
 ```
