@@ -12,7 +12,7 @@ fn get_line_from_pos(mut pos: usize, input: &String) -> (usize, usize, &str) {
     let mut line_nr = 0;
     let mut prev_line = lines.next().unwrap();
     for line in lines {
-        if prev_line.len() > pos {
+        if prev_line.len() >= pos {
             break;
         } else {
             pos -= prev_line.len() + 1;
